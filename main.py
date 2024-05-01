@@ -3,8 +3,7 @@ import asyncio
 
 
 async def main():
-    base_url = 'https://www.nay.sk/zastrihavace'
-    scraper = ProductScraper(base_url)
+    scraper = ProductScraper()
 
     await scraper.run()
 

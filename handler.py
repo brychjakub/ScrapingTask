@@ -4,15 +4,13 @@ import csv
 import json
 from product import Product
 import aiohttp
-import asyncio
-
-
-
+import re
 
 class ProductScraper:
-    def __init__(self, base_url):
-        self.base_url = base_url
+    def __init__(self):
+        self.base_url = 'https://www.nay.sk/zastrihavace'
         self.products = []
+        self.section = None
 
     
     async def fetch_page(self, url):
@@ -29,11 +27,15 @@ class ProductScraper:
                 class_='product-box product-box--main position-relative bg-white p-3 p-sm-4 typo-complex-12 flex-grow-0 flex-shrink-0'
                 )
             for section in product_sections:
-                title_tag = section.find('h3', class_='product-box__name')
-                title = title_tag.text.strip() if title_tag else None
-
-                price_tag = section.find('strong', class_='typo-complex-16')
-                price = price_tag.text.strip() if price_tag else None
+                self.section = section
+                title = self.getInfo('product-box__name', 'h3' )
+                price = self.getInfo('typo-complex-16', 'strong' )
+                availability = self.getInfo('complex-link__underline')
+                rating = self.getRating()
+                number_of_ratings = self.getInfo('text-gray-600')
+                
+                product_url_tag = section.find('a', class_='product-box__link')
+                url = self.base_url + product_url_tag['href'] if product_url_tag else None                                          
 
                 price_before_discount_tag = section.find(
                     'span', 
@@ -41,26 +43,47 @@ class ProductScraper:
                     )
                 price_before_discount = price_before_discount_tag.find('del').text.strip() if price_before_discount_tag and price_before_discount_tag.find('del') else None
                 
-                availability_tag = section.find('span', class_='complex-link__underline')
-                availibility = availability_tag.text.strip() if availability_tag else "Nedostupné"
-
-
                 if title and price:
-                    product = Product(title, price, price_before_discount, availibility)
+                    product = Product(title, price, price_before_discount, availability, rating, number_of_ratings, url)
                     self.products.append(product)
                     print("Scraped product:", product)
+
+
+    def getRating(self):
+
+        rating_wordy = self.getInfo('sr-only')
+        match = re.search(r'Hodnocení: (\d+\.\d+|\d+) z (\d+)', rating_wordy)
+
+        if match:
+            rating = match.group(1)  
+            total = match.group(2)  
+            formatted_rating = f"{rating}/{total}"
+            return formatted_rating
+     
+
+    def getUrl(self):
+        return self.base_url
 
 
     def save_to_csv(self, file_path):
         with open(file_path, 'w', newline='', encoding='utf-8') as file:
             writer = csv.writer(file)
-            writer.writerow(['Title', 'Price', 'Price Before Discount'])
+            writer.writerow(['Title', 'Price', 'Price Before Discount', 'availability', 'rating', 'number_of_ratings', 'url'])
             for product in self.products:
-                writer.writerow([product.title, product.price, product.price_before_discount, product.availability])
+                writer.writerow([product.title, product.price, product.price_before_discount, product.availability, product.rating, product.number_of_ratings, product.url])
+
 
     def save_to_json(self, file_path):
         with open(file_path, 'w', encoding='utf-8') as file:
-            json.dump([product.__dict__ for product in self.products], file, indent=4)
+            json.dump([product.__dict__ for product in self.products], file, indent=4, ensure_ascii=False)
+
+
+    def getInfo(self, selector, tag = 'span'):
+        tag = self.section.find(tag, class_ = selector)
+        attribute = tag.text.strip() if tag else None
+
+        return attribute
+
 
     async def run(self):
         page_number = 1
@@ -80,6 +103,5 @@ class ProductScraper:
                 print("Reached the end of the product list.")
                 break
 
-        # Save results to files
         self.save_to_csv('products.csv')
         self.save_to_json('products.json')
